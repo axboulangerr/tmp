@@ -31,7 +31,7 @@ npm --prefix web run dev -- --host 127.0.0.1
 
 Open the URL printed by Vite, usually `http://127.0.0.1:5173`. The API also exposes interactive docs at `http://127.0.0.1:8001/docs`.
 
-The API opens a visible Edge window while reading drafts because Drafter.lol rejects headless requests. Paste up to 50 Drafter.lol draft URLs, one per line. All drafts are written as labeled blocks in a single Excel worksheet.
+The API opens a visible Edge window while reading drafts because Drafter.lol rejects headless requests. Paste up to 50 Drafter.lol draft URLs, one per line. All drafts are written as labeled blocks in a single Excel worksheet, with champion names and thumbnails for every pick and ban.
 
 ## Deploy on Render
 
