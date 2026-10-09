@@ -17,7 +17,7 @@ COPY requirements.txt ./
 RUN python -m pip install --no-cache-dir -r requirements.txt \
     && python -m playwright install --with-deps chromium \
     && apt-get update \
-    && apt-get install -y --no-install-recommends xvfb fonts-liberation \
+    && apt-get install -y --no-install-recommends xvfb xauth fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
 COPY api.py drafter_to_excel.py ./
