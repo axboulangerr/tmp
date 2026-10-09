@@ -25,6 +25,8 @@ COPY start.sh ./start.sh
 COPY --from=frontend-build /app/web/dist ./web/dist
 
 RUN useradd --create-home --uid 10001 appuser \
+    && mkdir -p /tmp/.X11-unix \
+    && chmod 1777 /tmp/.X11-unix \
     && chown -R appuser:appuser /app /ms-playwright \
     && chmod 755 /app/start.sh
 
