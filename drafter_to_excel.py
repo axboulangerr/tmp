@@ -42,37 +42,94 @@ def read_team_name(page, side: str) -> str:
     return side.upper()
 
 
-def read_champions(page, selector: str) -> list[str]:
-    return [text.strip() for text in page.locator(selector).all_inner_texts()]
+def champion_id_from_image_src(source: str) -> str | None:
+    image_path = parse_qs(urlparse(source).query).get("url", [source])[0]
+    match = re.search(r"/game/champions/(\d+)\.png", image_path)
+    return match.group(1) if match else None
+
+
+def read_champion_catalog(page) -> dict[str, str]:
+    images = page.locator('img[src*="champions"]').evaluate_all(
+        "images => images.map(image => ({"
+        "alt: image.alt, "
+        "source: image.getAttribute('src'), "
+        "name: (image.parentElement?.parentElement?.innerText || '').trim()"
+        "}))"
+    )
+    champions = {}
+    for image in images:
+        champion_id = champion_id_from_image_src(image["source"] or "")
+        name = image["name"]
+        if champion_id and image["alt"] not in {"ban", "pick"} and name:
+            champions[champion_id] = name
+    return champions
+
+
+def read_champions(page, selector: str, catalog: dict[str, str]) -> list[str]:
+    entries = page.locator(selector).evaluate_all(
+        "groups => groups.map(group => ({"
+        "text: (group.innerText || '').trim(), "
+        "source: group.querySelector('img')?.getAttribute('src') || ''"
+        "}))"
+    )
+    champions = []
+    for entry in entries:
+        name = entry["text"]
+        if not name:
+            champion_id = champion_id_from_image_src(entry["source"])
+            name = catalog.get(champion_id or "", "")
+        champions.append(name)
+    return champions
 
 
 def read_draft(page, url: str) -> dict[str, object]:
     validate_url(url)
     try:
         response = page.goto(url, wait_until="domcontentloaded", timeout=60_000)
-        page.locator(".group.blue-pick").first.wait_for(state="visible", timeout=45_000)
+        page.locator(".group.blue-pick").first.wait_for(state="attached", timeout=45_000)
+        page.wait_for_function(
+            """() => {
+                const groups = [
+                    ['.group.blue-pick', false],
+                    ['.group.red-pick', false],
+                    ['.group.blue-ban', true],
+                    ['.group.red-ban', true],
+                ];
+                return groups.every(([selector, imageRequired]) => {
+                    const entries = Array.from(document.querySelectorAll(selector));
+                    return entries.length === 5 && entries.every(entry => {
+                        if (imageRequired) {
+                            return Boolean(entry.querySelector('img')?.getAttribute('src'));
+                        }
+                        return Boolean((entry.innerText || '').trim());
+                    });
+                });
+            }""",
+            timeout=45_000,
+        )
     except PlaywrightTimeoutError as error:
-        raise RuntimeError(f"Le draft n'a pas chargé : {url}") from error
+        raise RuntimeError(f"Les picks ou bans du draft ne sont pas complets : {url}") from error
     except PlaywrightError as error:
         raise RuntimeError(f"Impossible d'ouvrir {url} dans Edge : {error}") from error
 
     if response is not None and response.status >= 400:
         raise RuntimeError(f"Drafter.lol a répondu HTTP {response.status} pour {url}")
 
+    champion_catalog = read_champion_catalog(page)
     draft = {
         "blue_team": read_team_name(page, "blue"),
         "red_team": read_team_name(page, "red"),
-        "blue_picks": read_champions(page, ".group.blue-pick"),
-        "red_picks": read_champions(page, ".group.red-pick"),
-        "blue_bans": read_champions(page, ".group.blue-ban"),
-        "red_bans": read_champions(page, ".group.red-ban"),
+        "blue_picks": read_champions(page, ".group.blue-pick", champion_catalog),
+        "red_picks": read_champions(page, ".group.red-pick", champion_catalog),
+        "blue_bans": read_champions(page, ".group.blue-ban", champion_catalog),
+        "red_bans": read_champions(page, ".group.red-ban", champion_catalog),
         "game": parse_qs(urlparse(url).query).get("game", [""])[0],
         "source_url": url,
     }
 
     for key in ("blue_picks", "red_picks", "blue_bans", "red_bans"):
-        if len(draft[key]) != 5:
-            raise RuntimeError(f"Cinq emplacements attendus pour {key} dans {url}")
+        if len(draft[key]) != 5 or any(not champion for champion in draft[key]):
+            raise RuntimeError(f"Les cinq champions n'ont pas pu être extraits pour {key} dans {url}")
 
     return draft
 
