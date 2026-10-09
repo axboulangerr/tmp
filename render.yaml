@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: drafter-draftsheet
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    envVars:
+      - key: DRAFTER_BROWSER_CHANNEL
+        value: chromium
