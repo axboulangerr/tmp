@@ -12,7 +12,7 @@ import {
 } from 'lucide-react'
 import './App.css'
 
-const MAX_LINKS = 20
+const MAX_LINKS = 50
 
 function getDraftInfo(link, index) {
   try {
@@ -114,7 +114,7 @@ function App() {
         <section className="intro">
           <div className="intro-kicker"><span /> DRAFTER.LOL <span className="kicker-rule" /> EXPORT XLSX</div>
           <h1>Rassemblez vos drafts<span>.</span></h1>
-          <p>Importez une ou plusieurs parties. Chaque draft aura sa propre feuille Excel.</p>
+          <p>Importez jusqu’à 50 parties. Tous les drafts seront regroupés dans une seule feuille Excel.</p>
         </section>
 
         <form className="export-layout" onSubmit={handleExport}>

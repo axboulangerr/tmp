@@ -13,11 +13,11 @@ from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 from fastapi.staticfiles import StaticFiles
 
-from drafter_to_excel import create_workbook
+from drafter_to_excel import MAX_DRAFTS, create_workbook
 
 
 class ExportRequest(BaseModel):
-    urls: list[str] = Field(min_length=1, max_length=20)
+    urls: list[str] = Field(min_length=1, max_length=MAX_DRAFTS)
 
 
 app = FastAPI(title="Drafter Excel API", version="1.0.0")

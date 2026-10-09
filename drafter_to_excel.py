@@ -14,6 +14,8 @@ from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
+MAX_DRAFTS = 50
+
 
 def validate_url(url: str) -> None:
     parsed = urlparse(url)
@@ -65,6 +67,7 @@ def read_draft(page, url: str) -> dict[str, object]:
         "blue_bans": read_champions(page, ".group.blue-ban"),
         "red_bans": read_champions(page, ".group.red-ban"),
         "game": parse_qs(urlparse(url).query).get("game", [""])[0],
+        "source_url": url,
     }
 
     for key in ("blue_picks", "red_picks", "blue_bans", "red_bans"):
@@ -95,21 +98,42 @@ def draft_rows(draft: dict[str, object]) -> list[tuple[str, str, str, str]]:
     return rows
 
 
-def add_draft_sheet(workbook: Workbook, draft: dict[str, object], number: int) -> None:
-    sheet = workbook.create_sheet(title=f"Draft {number}")
+def add_draft_section(
+    sheet,
+    draft: dict[str, object],
+    number: int,
+    start_row: int,
+) -> int:
+    source_url = str(draft["source_url"])
+    draft_id = urlparse(source_url).path.rstrip("/").rsplit("/", 1)[-1]
+    game = str(draft["game"])
+    title = f"DRAFT {number}"
+    if game:
+        title += f" | GAME {game}"
+    if draft_id:
+        title += f" | {draft_id}"
+
+    sheet.merge_cells(start_row=start_row, start_column=1, end_row=start_row, end_column=4)
+    title_cell = sheet.cell(row=start_row, column=1, value=title)
+    title_cell.fill = PatternFill("solid", fgColor="20262B")
+    title_cell.font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    title_cell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+
+    header_row = start_row + 1
     headers = ["BLUE", draft["blue_team"], draft["red_team"], "RED"]
     for column, value in enumerate(headers, start=1):
-        sheet.cell(row=1, column=column, value=value)
+        sheet.cell(row=header_row, column=column, value=value)
 
     rows = draft_rows(draft)
-    for row_index, values in enumerate(rows, start=2):
+    data_start_row = header_row + 1
+    for row_index, values in enumerate(rows, start=data_start_row):
         for column, value in enumerate(values, start=1):
             sheet.cell(row=row_index, column=column, value=value)
 
     header_fills = ["1F4E78", "FFD966", "A9D18E", "C00000"]
     thin_black = Side(style="thin", color="000000")
     for column in range(1, 5):
-        cell = sheet.cell(row=1, column=column)
+        cell = sheet.cell(row=header_row, column=column)
         cell.fill = PatternFill("solid", fgColor=header_fills[column - 1])
         cell.font = Font(
             name="Calibri",
@@ -119,7 +143,7 @@ def add_draft_sheet(workbook: Workbook, draft: dict[str, object], number: int) -
         )
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-    for row_index in range(2, len(rows) + 2):
+    for row_index in range(data_start_row, data_start_row + len(rows)):
         for column in range(1, 5):
             cell = sheet.cell(row=row_index, column=column)
             cell.alignment = Alignment(horizontal="center", vertical="center")
@@ -130,20 +154,22 @@ def add_draft_sheet(workbook: Workbook, draft: dict[str, object], number: int) -
 
     widths = (22, max(18, min(30, len(str(headers[1])) + 3)), max(18, min(30, len(str(headers[2])) + 3)), 18)
     for column, width in enumerate(widths, start=1):
-        sheet.column_dimensions[get_column_letter(column)].width = width
+        letter = get_column_letter(column)
+        current_width = sheet.column_dimensions[letter].width or 0
+        sheet.column_dimensions[letter].width = max(current_width, width)
 
-    sheet.row_dimensions[1].height = 30
-    for row_index in range(2, len(rows) + 2):
+    sheet.row_dimensions[start_row].height = 24
+    sheet.row_dimensions[header_row].height = 24
+    for row_index in range(data_start_row, data_start_row + len(rows)):
         sheet.row_dimensions[row_index].height = 22
-    sheet.freeze_panes = "A2"
-    sheet.sheet_view.showGridLines = False
-    sheet.print_area = f"A1:D{len(rows) + 1}"
-    sheet.page_setup.orientation = "landscape"
-    sheet.page_setup.fitToWidth = 1
-    sheet.sheet_properties.pageSetUpPr.fitToPage = True
+
+    return data_start_row + len(rows) + 1
 
 
 def create_workbook(urls: list[str], output: Path) -> None:
+    if not urls or len(urls) > MAX_DRAFTS:
+        raise ValueError(f"Fournis entre 1 et {MAX_DRAFTS} liens Drafter.lol.")
+
     with sync_playwright() as playwright:
         browser_channel = os.getenv("DRAFTER_BROWSER_CHANNEL", "msedge").strip()
         browser_name = "Chromium" if browser_channel.casefold() == "chromium" else "Microsoft Edge"
@@ -160,7 +186,9 @@ def create_workbook(urls: list[str], output: Path) -> None:
             raise RuntimeError(f"{browser_name} est requis pour lire les drafts.") from error
 
         workbook = Workbook()
-        workbook.remove(workbook.active)
+        sheet = workbook.active
+        sheet.title = "Drafts"
+        next_row = 1
         try:
             for number, url in enumerate(urls, start=1):
                 page = browser.new_page(viewport={"width": 1440, "height": 1100})
@@ -169,11 +197,18 @@ def create_workbook(urls: list[str], output: Path) -> None:
                 )
                 try:
                     draft = read_draft(page, url)
-                    add_draft_sheet(workbook, draft, number)
+                    next_row = add_draft_section(sheet, draft, number, next_row)
                 finally:
                     page.close()
         finally:
             browser.close()
+
+    sheet.freeze_panes = "A3"
+    sheet.sheet_view.showGridLines = False
+    sheet.print_area = f"A1:D{next_row - 2}"
+    sheet.page_setup.orientation = "landscape"
+    sheet.page_setup.fitToWidth = 1
+    sheet.sheet_properties.pageSetUpPr.fitToPage = True
 
     output.parent.mkdir(parents=True, exist_ok=True)
     workbook.save(output)
