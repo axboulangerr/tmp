@@ -21,12 +21,14 @@ RUN python -m pip install --no-cache-dir -r requirements.txt \
     && rm -rf /var/lib/apt/lists/*
 
 COPY api.py drafter_to_excel.py ./
+COPY start.sh ./start.sh
 COPY --from=frontend-build /app/web/dist ./web/dist
 
 RUN useradd --create-home --uid 10001 appuser \
-    && chown -R appuser:appuser /app /ms-playwright
+    && chown -R appuser:appuser /app /ms-playwright \
+    && chmod 755 /app/start.sh
 
 USER appuser
-EXPOSE 8000
+EXPOSE 10000
 
-CMD ["sh", "-c", "exec xvfb-run -a python -m uvicorn api:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips='*'"]
+CMD ["./start.sh"]
